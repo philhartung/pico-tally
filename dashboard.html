@@ -17,7 +17,10 @@
     </div>
 
     <div class="d-flex justify-content-between align-items-center mb-3">
-      <button class="btn btn-primary" @click="searchLights">Find Lights</button>
+      <div>
+        <button class="btn btn-primary" @click="searchLights">Find Lights</button>
+        <button class="btn btn-primary" @click="updateLightsStatus">Update Light Status</button>
+      </div>
       <span class="badge bg-info text-dark">{{ status }}</span>
     </div>
 

@@ -153,7 +153,7 @@ async def status(req, res):
         "red": r,
         "green": g,
         "blue": b,
-        "brightness": brightness,
+        "brightness": round(brightness, 3),
         "rssi": wlan.status('rssi'),
         "temperature": readTemp(),
         "uptime": round(time.ticks_diff(time.ticks_ms(), startTime) / 1000)
@@ -176,19 +176,36 @@ async def set(req, res):
             brightness = float(brightness)
             
             if 0 <= brightness <= 1:
-                response = f"Color set to (R: {r}, G: {g}, B: {b}), brightness set to {brightness}"
                 leds.pixels_fill((r, g, b), brightness)
                 leds.pixels_show()
                 time.sleep(0.05)
                 leds.pixels_show()
+                
+                status = {
+                    "status": "success",
+                    "hostname": config['name'],
+                    "id": config['id'],
+                    "address": address,
+                    "red": r,
+                    "green": g,
+                    "blue": b,
+                    "brightness": round(brightness, 3),
+                    "rssi": wlan.status('rssi'),
+                    "temperature": readTemp(),
+                    "uptime": round(time.ticks_diff(time.ticks_ms(), startTime) / 1000)
+                }
+                response = ujson.dumps(status)
             else:
-                response = "Brightness must be between 0 and 1"
+                msg = "Brightness must be between 0 and 1"
+                response = ujson.dumps({"status":"error", "message": msg})
         else:
-            response = "Invalid request"
+            msg = "Invalid request"
+            response = ujson.dumps({"status":"error", "message": msg})
     except ValueError:
-        response = "Invalid color or brightness value"
+        msg = "Invalid color or brightness value"
+        response = ujson.dumps({"status":"error", "message": msg})
         
-    await res.start_html()
+    await res.start_json()
     await res.send(response)
 
 @app.route("/setRGB")
@@ -203,17 +220,33 @@ async def set(req, res):
         brightness = float(params.get('brightness', 0))
         
         if 0 <= brightness <= 1 and 0 <= r <= 255 and  0 <= g <= 255 and  0 <= b <= 255:
-            response = f"Color set to (R: {r}, G: {g}, B: {b}), brightness set to {brightness}"
             leds.pixels_fill((r, g, b), brightness)
             leds.pixels_show()
             time.sleep(0.05)
             leds.pixels_show()
+            
+            status = {
+                "status": "success",
+                "hostname": config['name'],
+                "id": config['id'],
+                "address": address,
+                "red": r,
+                "green": g,
+                "blue": b,
+                "brightness": round(brightness, 3),
+                "rssi": wlan.status('rssi'),
+                "temperature": readTemp(),
+                "uptime": round(time.ticks_diff(time.ticks_ms(), startTime) / 1000)
+            }
+            response = ujson.dumps(status)
         else:
-            response = "Brightness must be between 0 and 1"
+            msg = "Brightness must be between 0 and 1"
+            response = ujson.dumps({"status":"error", "message": msg})
     except ValueError:
-        response = "Invalid color or brightness value"
+        msg = "Invalid color or brightness value"
+        response = ujson.dumps({"status":"error", "message": msg})
         
-    await res.start_html()
+    await res.start_json()
     await res.send(response)
 
 # connect to wifi and start webserver
