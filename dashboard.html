@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tally Light Dashboard</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+  <div id="app" class="container mt-5">
+    <h1 class="text-center mb-4">Tally Light Dashboard</h1>
+
+    <div class="input-group mb-3">
+      <span class="input-group-text">IPv4 Subnet to search:</span>
+      <input v-model="subnet" type="text" class="form-control" maxlength="19">
+    </div>
+
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <button class="btn btn-primary" @click="searchLights">Find Lights</button>
+      <span class="badge bg-info text-dark">{{ status }}</span>
+    </div>
+
+    <div class="form-check mb-3">
+      <input class="form-check-input" type="checkbox" id="autoUpdate" v-model="autoUpdate">
+      <label class="form-check-label" for="autoUpdate">
+        Auto-update lights status
+      </label>
+    </div>
+
+    <div class="input-group mb-3" v-if="autoUpdate">
+      <span class="input-group-text">Update interval (seconds):</span>
+      <input v-model.number="updateInterval" type="number" class="form-control" min="1">
+    </div>
+
+    <div v-if="lights.length > 0" class="table-responsive">
+      <table class="table table-bordered table-hover">
+        <thead class="table-dark">
+          <tr>
+            <th>ID</th>
+            <th>Name</th>
+            <th>Address</th>
+            <th>Color</th>
+            <th>Brightness</th>
+            <th>Uptime</th>
+            <th>Temperature</th>
+            <th>RSSI</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="light in lights" :key="light.id">
+            <td>{{ light.id }}</td>
+            <td>{{ light.hostname }}</td>
+            <td>{{ light.ip }}</td>
+            <td>
+              <input type="color" v-model="light.color" @change="setLight(light)">
+              <span class="ms-2">{{ light.color }}</span>
+            </td>
+            <td>
+              <input type="range" class="form-range" min="0" max="1" step="0.05" v-model="light.brightness" @change="setLight(light)">
+              <span class="ms-2">{{ light.brightness }}</span>
+            </td>
+            <td>{{ light.uptime }}</td>
+            <td>{{ light.temperature }} °C</td>
+            <td>{{ light.rssi }} dBm</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/vue@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    new Vue({
+      el: '#app',
+      data: {
+        subnet: '192.168.1.0/24',
+        lights: [],
+        status: 'Ready to search...',
+        autoUpdate: false,
+        updateInterval: 30, // Default update interval in seconds
+        updateTimer: null
+      },
+      methods: {
+        searchLights() {
+          this.lights = [];
+          const [startAddr, endAddr] = this.getIPRange(this.subnet);
+          let expectedCount = endAddr - startAddr + 1;
+          this.status = 'Searching...';
+
+          for(let binaddr = startAddr; binaddr <= endAddr; ++binaddr) {
+            const ipaddr = this.binToQuads(binaddr);
+            this.checkLight(ipaddr, expectedCount);
+          }
+        },
+        checkLight(ipaddr, expectedCount) {
+          const request = new XMLHttpRequest();
+          request.timeout = 5000;
+
+          request.onload = () => {
+            this.status = --expectedCount <= 0 ? 'Done!' : `Checking ${ipaddr}`;
+            const lightStatus = JSON.parse(request.responseText);
+            this.lights.push(this.createLight(ipaddr, lightStatus));
+            this.setupAutoUpdate(); // Set up auto-update after lights are found
+          };
+
+          request.onerror = () => {
+            this.status = --expectedCount <= 0 ? 'Done!' : `Checking ${ipaddr}`;
+            request.abort();
+          };
+
+          request.ontimeout = () => {
+            this.status = --expectedCount <= 0 ? 'Done!' : `Checking ${ipaddr}`;
+          };
+
+          try {
+            request.open('GET', `http://${ipaddr}:7413/status`, true);
+            request.send();
+          } catch(e) {
+            request.abort();
+            this.status = --expectedCount <= 0 ? 'Done!' : `Checking ${ipaddr}`;
+          }
+        },
+        setLight(light) {
+          const color = light.color.substring(1);
+          const brightness = light.brightness;
+
+          const request = new XMLHttpRequest();
+          request.timeout = 2000;
+
+          request.onload = () => {
+            const lightStatus = JSON.parse(request.responseText);
+            const updatedLight = this.createLight(light.ip, lightStatus);
+            const index = this.lights.findIndex(l => l.ip === light.ip);
+            if (index !== -1) this.$set(this.lights, index, updatedLight);
+          };
+
+          request.onerror = () => console.log(`Error updating ${light.ip}`);
+          request.ontimeout = () => console.log(`Timeout updating ${light.ip}`);
+
+          request.open('GET', `http://${light.ip}:7413/set?color=${color}&brightness=${brightness}`, true);
+          request.send();
+        },
+        createLight(ipaddr, status) {
+          return {
+            id: status.id,
+            hostname: status.hostname,
+            ip: ipaddr,
+            color: `#${this.rgbToHex(status.red, status.green, status.blue)}`,
+            brightness: status.brightness,
+            uptime: this.secondsToTimeString(status.uptime),
+            temperature: status.temperature,
+            rssi: status.rssi
+          };
+        },
+        getIPRange(networkString) {
+            const [networkAddress, netmask] = networkString.split('/');
+            const bitmask = 32 - parseInt(netmask, 10);
+            const network = this.ipToBinary(networkAddress);
+            const wildcard = 0xFFFFFFFF >>> parseInt(netmask, 10);
+            const broadcast = network ^ wildcard;
+
+            return [network + 1, broadcast - 1];
+        },
+        binToQuads(addrbits) {
+            return [
+            (addrbits >>> 24) & 0xFF,
+            (addrbits >>> 16) & 0xFF,
+            (addrbits >>> 8) & 0xFF,
+            addrbits & 0xFF
+            ].join('.');
+        },
+        ipToBinary(ipAddress) {
+            return ipAddress.split('.')
+            .map(quad => parseInt(quad, 10))
+            .reduce((acc, quad) => (acc << 8) + quad, 0);
+        },
+        rgbToHex(r, g, b) {
+          return [r, g, b].map(val => val.toString(16).padStart(2, '0')).join('');
+        },
+        secondsToTimeString(seconds) {
+          const hours = Math.floor(seconds / 3600);
+          const minutes = Math.floor((seconds % 3600) / 60);
+          const secs = seconds % 60;
+
+          let timeString = '';
+
+          if (hours > 0) {
+              timeString += hours + 'h ';
+          }
+          if (minutes > 0 || hours > 0) {
+              timeString += minutes + 'min ';
+          }
+          timeString += secs + 'sec';
+
+          return timeString.trim();
+        },
+        setupAutoUpdate() {
+          if (this.autoUpdate) {
+            this.clearAutoUpdate(); // Clear any existing timer
+            this.updateTimer = setInterval(() => {
+              this.updateLightsStatus();
+            }, this.updateInterval * 1000);
+          } else {
+            this.clearAutoUpdate();
+          }
+        },
+        clearAutoUpdate() {
+          if (this.updateTimer) {
+            clearInterval(this.updateTimer);
+            this.updateTimer = null;
+          }
+        },
+        updateLightsStatus() {
+          this.lights.forEach(light => {
+            this.checkLightStatus(light.ip);
+          });
+        },
+        checkLightStatus(ipaddr) {
+          const request = new XMLHttpRequest();
+          request.timeout = 5000;
+
+          request.onload = () => {
+            const lightStatus = JSON.parse(request.responseText);
+            const updatedLight = this.createLight(ipaddr, lightStatus);
+            const index = this.lights.findIndex(l => l.ip === ipaddr);
+            if (index !== -1) this.$set(this.lights, index, updatedLight);
+          };
+
+          request.onerror = () => console.log(`Error updating ${ipaddr}`);
+          request.ontimeout = () => console.log(`Timeout updating ${ipaddr}`);
+
+          request.open('GET', `http://${ipaddr}:7413/status`, true);
+          request.send();
+        }
+      },
+      watch: {
+        autoUpdate(newVal) {
+          this.setupAutoUpdate();
+        },
+        updateInterval(newVal) {
+          this.setupAutoUpdate();
+        }
+      },
+      mounted() {
+        setTimeout(this.searchLights, 500);
+      }
+    });
+  </script>
+</body>
+</html>

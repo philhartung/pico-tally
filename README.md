@@ -15,5 +15,5 @@ Pico-Tally is a Python-based tallylight implementation for the Raspberry Pi Pico
 This project is licensed under the MIT License - see the LICENSE file for details.
 
 ## Acknowledgments
- - Inspired by TallyOBS
+ - Inspired by [TallyOBS](https://github.com/deckerego/tally_obs)
  - `src/tinyweb.py` is a modified version of [tinyweb](https://github.com/belyalov/tinyweb) under MIT License
