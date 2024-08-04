@@ -91,20 +91,20 @@
         searchLights() {
           this.lights = [];
           const [startAddr, endAddr] = this.getIPRange(this.subnet);
-          let expectedCount = endAddr - startAddr + 1;
+          this.expectedCount = endAddr - startAddr + 1;
           this.status = 'Searching...';
 
           for(let binaddr = startAddr; binaddr <= endAddr; ++binaddr) {
             const ipaddr = this.binToQuads(binaddr);
-            this.checkLight(ipaddr, expectedCount);
+            this.checkLight(ipaddr);
           }
         },
-        checkLight(ipaddr, expectedCount) {
+        checkLight(ipaddr) {
           const request = new XMLHttpRequest();
           request.timeout = 5000;
 
           request.onload = () => {
-            this.status = --expectedCount <= 0 ? 'Done!' : `Checking ${ipaddr}`;
+            this.status = --this.expectedCount <= 0 ? 'Done!' : `Checking ${ipaddr}`;
             const lightStatus = JSON.parse(request.responseText);
             this.lights.push(this.createLight(ipaddr, lightStatus));
             this.lights.sort((a, b) => {
@@ -120,12 +120,12 @@
           };
 
           request.onerror = () => {
-            this.status = --expectedCount <= 0 ? 'Done!' : `Checking ${ipaddr}`;
+            this.status = --this.expectedCount <= 0 ? 'Done!' : `Checking ${ipaddr}`;
             request.abort();
           };
 
           request.ontimeout = () => {
-            this.status = --expectedCount <= 0 ? 'Done!' : `Checking ${ipaddr}`;
+            this.status = --this.expectedCount <= 0 ? 'Done!' : `Checking ${ipaddr}`;
           };
 
           try {
@@ -133,7 +133,7 @@
             request.send();
           } catch(e) {
             request.abort();
-            this.status = --expectedCount <= 0 ? 'Done!' : `Checking ${ipaddr}`;
+            this.status = --this.expectedCount <= 0 ? 'Done!' : `Checking ${ipaddr}`;
           }
         },
         setLight(light) {
