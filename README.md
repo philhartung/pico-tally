@@ -11,6 +11,11 @@ Pico-Tally is a Python-based tallylight implementation for the Raspberry Pi Pico
  1. Clone this repository to your local machine: `git clone https://github.com/philhartung/pico-tally.git`
  2. Connect your Raspberry Pi Pico to your computer and upload all files under `src/` to the Pico using a tool like Thonny or ampy. Adjust the config.exmaple.json and rename it to config.json
 
+## Dashboard
+`dashboard.html` provides an HTML dashboard to discover and control lights on a local network. It is inspired by Tally OBS's [dashboard.html](https://github.com/deckerego/tally_obs/blob/master/scripts/dashboard.html).
+
+![Tally Light Dashboard](.doc/dashboard.png)
+
 ## License
 This project is licensed under the MIT License - see the LICENSE file for details.
 
