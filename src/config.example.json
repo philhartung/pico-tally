@@ -1,0 +1,8 @@
+{
+    "wifi_ssid": "ssid",
+    "wifi_password": "password",
+    "name": "CAMERA",
+    "id": 1,
+    "port": 7413,
+    "displayIP": false
+}
