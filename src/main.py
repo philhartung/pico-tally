@@ -73,6 +73,7 @@ def connect_to_wifi(ssid, password):
     global wlan
     wlan = network.WLAN(network.STA_IF)
     wlan.active(True)
+    wlan.config(hostname=config['name'])
     wlan.connect(ssid, password)
 
     while not wlan.isconnected():
