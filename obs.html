@@ -27,19 +27,25 @@
                 {
                     host: '192.168.1.107:7413',
                     target: 'source', // scene oder source
-                    name: 'SRC SDI1'
+                    name: 'SDI1'
                 },
                 {
                     host: '192.168.1.212:7413',
                     target: 'source',
-                    name: 'SRC SDI2'
+                    name: 'SDI2'
                 },
                 {
                     host: '192.168.1.108:7413',
                     target: 'source',
-                    name: 'SRC SDI3'
+                    name: 'SDI3'
                 },
-            ]
+            ],
+            colors: {
+                preview: {r: 0, g: 255, b: 0, brightness: 0.2},
+                program: {r: 255, g: 0, b: 0, brightness: 0.2},
+                idle: {r: 0, g: 0, b: 255, brightness: 0},
+            },
+            updateInterval: 10000
         };
         
         // global vars
@@ -53,47 +59,48 @@
         let mapping = {};
         
         const updateLight = function(update){
-          const request = new XMLHttpRequest();
-          request.timeout = 2000;
+            const url = `http://${update.host}/setRGB?r=${update.colors.r}&g=${update.colors.g}&b=${update.colors.b}&brightness=${update.colors.brightness}`
+            console.log('Update', update, url);
+            const request = new XMLHttpRequest();
+            request.timeout = 2000;
 
-          request.onload = () => console.log(`Updated ${update.host}`);
-          request.onerror = () => console.log(`Error updating ${update.host}`);
-          request.ontimeout = () => console.log(`Timeout updating ${update.host}`);
+            request.onload = () => console.log(`Updated ${update.host}`);
+            request.onerror = () => console.log(`Error updating ${update.host}`);
+            request.ontimeout = () => console.log(`Timeout updating ${update.host}`);
 
-          request.open('GET', `http://${update.host}/setRGB?r=${update.r}&g=${update.g}&b=${update.b}&brightness=${update.brightness}`, true);
-          request.send();
+            request.open('GET', url, true);
+            request.send();
         };
 
         const updateLights = function(){
             // iterate over all lights and calc update
             updateTimeout = null;
-            update = [];
+            updates = [];
 
             for(let i = 0; i < config.lights.length; i++){
                 let light = config.lights[i];
+                let update = {colors: config.colors.idle, host: light.host};
 
                 if(light.target == 'scene'){
                     if(light.name == status.program){
-                        update.push({host: light.host, r: 255, g: 0, b: 0, brightness: 0.1});
+                        update.colors = config.colors.program;
                     }else if(light.name == status.preview){
-                        update.push({host: light.host, r: 0, g: 255, b: 0, brightness: 0.1});
-                    }else{
-                        update.push({host: light.host, r: 0, g: 0, b: 0, brightness: 0});
+                        update.colors = config.colors.preview;
                     }
                 }else if(light.target == 'source'){
                     if(mapping[status.program].sources.includes(light.name)){
-                        update.push({host: light.host, r: 255, g: 0, b: 0, brightness: 0.1});
+                        update.colors = config.colors.program;
                     }else if(mapping[status.preview].sources.includes(light.name)){
-                        update.push({host: light.host, r: 0, g: 255, b: 0, brightness: 0.1});
-                    }else{
-                        update.push({host: light.host, r: 0, g: 0, b: 0, brightness: 0});
+                        update.colors = config.colors.preview;
                     }
                 }
+
+                updates.push(update);
             }
 
             // execute Update
-            for(let i = 0; i < update.length; i++){
-                updateLight(update[i]);
+            for(let i = 0; i < updates.length; i++){
+                updateLight(updates[i]);
             }
         }
 
@@ -107,7 +114,7 @@
                     clearTimeout(updateTimeout);
                 }
 
-                updateTimeout = setTimeout(updateLights, updateTimeoutMS);
+                updateTimeout = setTimeout(updateLights, 500);
 			});
 
 			obs.call('GetCurrentPreviewScene').then(function(data){
@@ -117,10 +124,11 @@
                     clearTimeout(updateTimeout);
                 }
 
-                updateTimeout = setTimeout(updateLights, updateTimeoutMS);
+                updateTimeout = setTimeout(updateLights, 500);
 			});
 
             updateMapping();
+            setInterval(updateMapping, config.updateInterval);
         }
 
         let updateMapping = function(){
@@ -135,7 +143,6 @@
         let iterateItems = function(name){
             obs.call('GetSceneItemList', {sceneName: name}).then(function(data){
                 for(let j = 0; j < data.sceneItems.length; j++){
-                    console.log(name, data.sceneItems[j].sourceName, data.sceneItems[j].sourceType);
                     if(!mapping[name]){
                         mapping[name] = {
                             sources: [],
@@ -143,47 +150,40 @@
                         }
                     }
 
-                    if(data.sceneItems[j].sourceType == 'OBS_SOURCE_TYPE_SCENE'){
-                        mapping[name].scenes.push(data.sceneItems[j].sourceName);
-                    }else if(data.sceneItems[j].sourceType == 'OBS_SOURCE_TYPE_INPUT'){
+                    if(data.sceneItems[j].sourceType == 'OBS_SOURCE_TYPE_SCENE' && data.sceneItems[j].sceneItemEnabled && !data.sceneItems[j].isGroup){
+                        // mapping[name].scenes.push(data.sceneItems[j].sourceName);
+                        updateMappingRec(name, data.sceneItems[j].sourceName, 'GetSceneItemList', 0);
+                    }else if(data.sceneItems[j].sourceType == 'OBS_SOURCE_TYPE_SCENE' && data.sceneItems[j].sceneItemEnabled && data.sceneItems[j].isGroup){
+                        updateMappingRec(name, data.sceneItems[j].sourceName, 'GetGroupSceneItemList', 0);
+                    }else if(data.sceneItems[j].sourceType == 'OBS_SOURCE_TYPE_INPUT' && data.sceneItems[j].sceneItemEnabled){
                         mapping[name].sources.push(data.sceneItems[j].sourceName);
                     }
                 }
-
-                if(deepMappingTimeout){
-                    clearTimeout(deepMappingTimeout);
-                }
-
-                deepMappingTimeout = setTimeout(updateDeepMapping, 10);
             });
         };
 
-        let updateDeepMapping = function(){
-            deepMappingTimeout = null;
+        let updateMappingRec = function(name, sceneName, type, depth){
+            if(depth < 4){
+                obs.call(type, {sceneName: sceneName}).then(function(data){
+                    for(let j = 0; j < data.sceneItems.length; j++){
+                        if(!mapping[name]){
+                            mapping[name] = {
+                                sources: [],
+                                scenes: [],
+                            }
+                        }
 
-            for (let key in mapping) {
-                if (mapping.hasOwnProperty(key)) {
-                    const value = mapping[key];
-                    console.log(`Key: ${key}, Value: `, value);
-                    for(let i = 0; i < value.scenes.length; i++){
-                        updateDeepMappingRec(key, value.scenes[i], 0);
+                        if(data.sceneItems[j].sourceType == 'OBS_SOURCE_TYPE_SCENE' && data.sceneItems[j].sceneItemEnabled && !data.sceneItems[j].isGroup){
+                            updateMappingRec(name, data.sceneItems[j].sourceName, 'GetSceneItemList', depth++);
+                        }else if(data.sceneItems[j].sourceType == 'OBS_SOURCE_TYPE_SCENE' && data.sceneItems[j].sceneItemEnabled && data.sceneItems[j].isGroup){
+                            updateMappingRec(name, data.sceneItems[j].sourceName, 'GetGroupSceneItemList', depth++);
+                        }else if(data.sceneItems[j].sourceType == 'OBS_SOURCE_TYPE_INPUT' && data.sceneItems[j].sceneItemEnabled){
+                            mapping[name].sources.push(data.sceneItems[j].sourceName);
+                        }
                     }
-                }
+                });
             }
-        }
-
-        let updateDeepMappingRec = function(scene, recursive, deep){
-            console.log(scene, recursive, deep)
-            obs.call('GetSceneItemList', {sceneName: recursive}).then(function(data){
-                for(let j = 0; j < data.sceneItems.length; j++){
-                    if(data.sceneItems[j].sourceType == 'OBS_SOURCE_TYPE_SCENE' && deep < 10){
-                        updateDeepMappingRec(scene, data.sceneItems[j].sourceName, deep++);
-                    }else if(data.sceneItems[j].sourceType == 'OBS_SOURCE_TYPE_INPUT'){
-                        mapping[scene].sources.push(data.sceneItems[j].sourceName);
-                    }
-                }
-            });
-        }
+        };
 
 		let initInterval = setInterval(function(){
 			let wsAddress = getComputedStyle(document.documentElement).getPropertyValue('--address').trim();
