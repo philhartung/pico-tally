@@ -4,46 +4,114 @@
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<title>OBS Monitoring</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
 
 	<style type="text/css">
         :root {
             --address: 'ws://127.0.0.1:4455'; /* OBS Websocket address */
             --password: 'password'; /* OBS Websocket password */
         }
+
+        body{
+            overflow: hidden;
+            background-color: #252525 !important;
+        }
+
+        .tally-light {
+        border: 5px solid;
+        border-radius: 10px;
+        margin: 20px;
+        padding: 20px;
+        width: 300px;
+        height: 250px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-around;
+        }
+
+        .tally-light .light-header {
+        font-weight: bold;
+        font-size: 1.5em;
+        }
+
+        .tally-light .light-details {
+        flex-grow: 1;
+        color: white;
+        }
     </style>
 </head>
 <body>
-	<div>
-
+    <div id="app" class="container-fluid">
+        <div class="row">
+          <div v-for="light in tallyLights" 
+               :key="light.ip" 
+               class="col-md-4 d-flex justify-content-center">
+            <div class="tally-light" :style="{ borderColor: light.color }">
+              <div class="light-header" style="color: white;">{{ light.hostname }}</div>
+              <div class="light-details">
+                <p><strong>IP Adresse:</strong> {{ light.address }}</p>
+                <p><strong>RSSI:</strong> {{ light.rssi }} dBm</p>
+                <p><strong>Temperatur:</strong> {{ light.temperature }} °C</p>
+                <p><strong>Helligkeit:</strong> {{ Math.round(light.brightness * 100) }}%</p>
+              </div>
+            </div>
+          </div>
+        </div>
     </div>
 
-	<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/vue@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/obs-websocket-js"></script>
 	<script type="text/javascript">
+        let app = new Vue({
+            el: '#app',
+            data: {
+                tallyLights: []
+            },
+            methods: {
+                updateTallyLight(newData) {
+                    let index = -1;
+
+                    for (let i = 0; i < this.tallyLights.length; i++) {
+                        if (this.tallyLights[i].address === newData.address) {
+                            index = i;
+                        }
+                    }
+
+                    if(index == -1){
+                        this.tallyLights.push(newData);
+                        this.tallyLights.sort((a, b) => {
+                            return a.id - b.id;
+                        });
+                    }else{
+                        Object.assign(this.tallyLights[index], newData);
+                    }
+                }
+            }
+        });
+            
 		const obs = new OBSWebSocket();
         const config = {
             lights: [
                 {
                     host: '192.168.1.107:7413',
                     target: 'source', // scene oder source
-                    name: 'SDI1'
+                    name: 'SRC SDI1'
                 },
                 {
                     host: '192.168.1.212:7413',
                     target: 'source',
-                    name: 'SDI2'
+                    name: 'SRC SDI2'
                 },
                 {
                     host: '192.168.1.108:7413',
                     target: 'source',
-                    name: 'SDI3'
+                    name: 'SRC SDI3'
                 },
             ],
             colors: {
-                preview: {r: 0, g: 255, b: 0, brightness: 0.2},
-                program: {r: 255, g: 0, b: 0, brightness: 0.2},
-                idle: {r: 0, g: 0, b: 255, brightness: 0},
+                preview: {r: 0, g: 255, b: 0, brightness: 0.1},
+                program: {r: 255, g: 0, b: 0, brightness: 0.1},
+                idle: {r: 64, g: 64, b: 64, brightness: 0},
             },
             updateInterval: 10000
         };
@@ -64,7 +132,20 @@
             const request = new XMLHttpRequest();
             request.timeout = 2000;
 
-            request.onload = () => console.log(`Updated ${update.host}`);
+            request.onload = () => {
+                if (request.status >= 200 && request.status < 300) {
+                    try {
+                        const responseJson = JSON.parse(request.responseText);
+                        console.log(`Updated ${update.host} with response:`, responseJson);
+                        responseJson.color = 'rgb(' + responseJson.red + ',' + responseJson.green + ',' + responseJson.blue + ')';
+                        app.updateTallyLight(responseJson);
+                    } catch (error) {
+                        console.error('Error parsing JSON response:', error);
+                    }
+                } else {
+                    console.error(`Failed to update ${update.host}. Status: ${request.status}`);
+                }
+            };
             request.onerror = () => console.log(`Error updating ${update.host}`);
             request.ontimeout = () => console.log(`Timeout updating ${update.host}`);
 
@@ -132,7 +213,7 @@
         }
 
         let updateMapping = function(){
-            obs.call('GetSceneList', {sceneName: 'Nested'}).then(function(data){
+            obs.call('GetSceneList').then(function(data){
 				for(let i = 0; i < data.scenes.length; i++){
                     let sceneName = data.scenes[i].sceneName;
                     iterateItems(sceneName);
