@@ -5,6 +5,7 @@
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<title>OBS Monitoring</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons/font/bootstrap-icons.css" rel="stylesheet">
 
 	<style type="text/css">
         :root {
@@ -12,31 +13,63 @@
             --password: 'password'; /* OBS Websocket password */
         }
 
-        body{
+        body {
             overflow: hidden;
             background-color: #252525 !important;
         }
 
         .tally-light {
-        border: 5px solid;
-        border-radius: 10px;
-        margin: 20px;
-        padding: 20px;
-        width: 300px;
-        height: 250px;
-        display: flex;
-        flex-direction: column;
-        justify-content: space-around;
+            border: 5px solid;
+            border-radius: 15px;
+            margin: 20px;
+            padding: 30px;
+            width: 350px;
+            height: 300px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            background-color: #333;
+            box-shadow: 0px 4px 15px rgba(0, 0, 0, 0.3);
+            color: white;
+            transition: transform 0.3s ease-in-out;
+        }
+
+        .tally-light:hover {
+            transform: scale(1.05);
         }
 
         .tally-light .light-header {
-        font-weight: bold;
-        font-size: 1.5em;
+            font-weight: bold;
+            font-size: 2em;
+            text-align: center;
         }
 
         .tally-light .light-details {
-        flex-grow: 1;
-        color: white;
+            flex-grow: 1;
+            font-size: 1.25em;
+        }
+
+        .tally-light .light-details p {
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+        }
+
+        .tally-light .light-details p i {
+            margin-right: 10px;
+            font-size: 1.5em;
+        }
+
+        .tally-light .good {
+            color: #28a745; /* Grün */
+        }
+
+        .tally-light .moderate {
+            color: #ffc107; /* Gelb */
+        }
+
+        .tally-light .bad {
+            color: #dc3545; /* Rot */
         }
     </style>
 </head>
@@ -45,14 +78,14 @@
         <div class="row">
           <div v-for="light in tallyLights" 
                :key="light.ip" 
-               class="col-md-4 d-flex justify-content-center">
+               class="col-md-3 d-flex justify-content-center">
             <div class="tally-light" :style="{ borderColor: light.color }">
-              <div class="light-header" style="color: white;">{{ light.hostname }}</div>
+              <div class="light-header">{{ light.hostname }}</div>
               <div class="light-details">
-                <p><strong>IP Adresse:</strong> {{ light.address }}</p>
-                <p><strong>RSSI:</strong> {{ light.rssi }} dBm</p>
-                <p><strong>Temperatur:</strong> {{ light.temperature }} °C</p>
-                <p><strong>Helligkeit:</strong> {{ Math.round(light.brightness * 100) }}%</p>
+                <p><i class="bi bi-wifi"></i>{{ light.address }}</p>
+                <p :class="getRssiClass(light.rssi)"><i class="bi bi-activity"></i>{{ light.rssi }} dBm</p>
+                <p :class="getTemperatureClass(light.temperature)"><i class="bi bi-thermometer-half"></i>{{ light.temperature }} °C</p>
+                <p><i class="bi bi-brightness-high"></i>{{ Math.round(light.brightness * 100) }}%</p>
               </div>
             </div>
           </div>
@@ -85,10 +118,28 @@
                     }else{
                         Object.assign(this.tallyLights[index], newData);
                     }
+                },
+                getRssiClass(rssi) {
+                    if (rssi >= -60) {
+                        return 'good';
+                    } else if (rssi >= -80) {
+                        return 'moderate';
+                    } else {
+                        return 'bad';
+                    }
+                },
+                getTemperatureClass(temperature) {
+                    if (temperature <= 50) {
+                        return 'good';
+                    } else if (temperature <= 70) {
+                        return 'moderate';
+                    } else {
+                        return 'bad';
+                    }
                 }
             }
         });
-            
+
 		const obs = new OBSWebSocket();
         const config = {
             lights: [
@@ -216,32 +267,10 @@
             obs.call('GetSceneList').then(function(data){
 				for(let i = 0; i < data.scenes.length; i++){
                     let sceneName = data.scenes[i].sceneName;
-                    iterateItems(sceneName);
+                    updateMappingRec(sceneName, sceneName, 'GetSceneItemList', 0);
                 }
 			});
         }
-
-        let iterateItems = function(name){
-            obs.call('GetSceneItemList', {sceneName: name}).then(function(data){
-                for(let j = 0; j < data.sceneItems.length; j++){
-                    if(!mapping[name]){
-                        mapping[name] = {
-                            sources: [],
-                            scenes: [],
-                        }
-                    }
-
-                    if(data.sceneItems[j].sourceType == 'OBS_SOURCE_TYPE_SCENE' && data.sceneItems[j].sceneItemEnabled && !data.sceneItems[j].isGroup){
-                        // mapping[name].scenes.push(data.sceneItems[j].sourceName);
-                        updateMappingRec(name, data.sceneItems[j].sourceName, 'GetSceneItemList', 0);
-                    }else if(data.sceneItems[j].sourceType == 'OBS_SOURCE_TYPE_SCENE' && data.sceneItems[j].sceneItemEnabled && data.sceneItems[j].isGroup){
-                        updateMappingRec(name, data.sceneItems[j].sourceName, 'GetGroupSceneItemList', 0);
-                    }else if(data.sceneItems[j].sourceType == 'OBS_SOURCE_TYPE_INPUT' && data.sceneItems[j].sceneItemEnabled){
-                        mapping[name].sources.push(data.sceneItems[j].sourceName);
-                    }
-                }
-            });
-        };
 
         let updateMappingRec = function(name, sceneName, type, depth){
             if(depth < 4){
@@ -255,6 +284,7 @@
                         }
 
                         if(data.sceneItems[j].sourceType == 'OBS_SOURCE_TYPE_SCENE' && data.sceneItems[j].sceneItemEnabled && !data.sceneItems[j].isGroup){
+                            mapping[name].scenes.push(data.sceneItems[j].sourceName);
                             updateMappingRec(name, data.sceneItems[j].sourceName, 'GetSceneItemList', depth++);
                         }else if(data.sceneItems[j].sourceType == 'OBS_SOURCE_TYPE_SCENE' && data.sceneItems[j].sceneItemEnabled && data.sceneItems[j].isGroup){
                             updateMappingRec(name, data.sceneItems[j].sourceName, 'GetGroupSceneItemList', depth++);
